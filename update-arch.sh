@@ -160,7 +160,7 @@ fi
 
 mapfile -t pacman_orphans < <(pacman -Qdtq 2>/dev/null || true)
 if ((${#pacman_orphans[@]})); then
-  run_and_check "Removing orphaned pacman packages" sudo pacman -Rns "${pacman_orphans[@]}"
+  run_and_check "Removing orphaned pacman packages" sudo pacman -Rns --noconfirm "${pacman_orphans[@]}"
 else
   echo
   echo "==> No orphaned pacman packages found."
@@ -169,7 +169,7 @@ fi
 if [[ -n "$AUR_HELPER" ]]; then
   mapfile -t aur_orphans < <("$AUR_HELPER" -Qdtq 2>/dev/null || true)
   if ((${#aur_orphans[@]})); then
-    run_and_check "Removing orphaned $AUR_HELPER packages" "$AUR_HELPER" -Rns "${aur_orphans[@]}"
+    run_and_check "Removing orphaned $AUR_HELPER packages" "$AUR_HELPER" -Rns --noconfirm "${aur_orphans[@]}"
   else
     echo
     echo "==> No orphaned $AUR_HELPER packages found."
