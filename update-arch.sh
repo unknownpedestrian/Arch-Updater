@@ -32,7 +32,9 @@ fi
 
 REBOOT_AFTER=true
 DRY_RUN=false
-LOG_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/update-arch.log"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+LOG_FILE="$SCRIPT_DIR/update-arch.log"
 FAILED_STEPS=0
 
 case "${1:-}" in
