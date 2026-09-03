@@ -93,38 +93,38 @@ check_for_reboot() {
   if [[ "$REBOOT_AFTER" == true ]]; then
     if (( FAILED_STEPS > 0 )); then
       echo
-      echo "Update completed with $FAILED_STEPS failed step(s). Review $LOG_FILE."
+      echo "Update completed with $FAILED_STEPS failed step(s). Review $LOG_FILE." | tee -a "$LOG_FILE"
     else
       echo
-      echo "System update complete."
+      echo "System update complete." | tee -a "$LOG_FILE"
     fi
 
     echo "Log file: $LOG_FILE"
     echo "Would you like to reboot now? [Y/n] (default: yes, timeout in 10s)"
-    read -r -t 10 answer || answer="y"
+    read -r -s -n 1 -t 10 answer || answer="y"
     case "$answer" in
       "")
         answer="y"
         ;;
     esac
     case "$answer" in
-      [Yy]|[Yy][Ee][Ss]|"")
-        echo "Rebooting now..."
+      [Yy]|[Yy][Ee][Ss])
+        echo "Rebooting now..." | tee -a "$LOG_FILE"
         sudo reboot
         ;;
       *)
-        echo "Reboot skipped by user."
+        echo "Reboot skipped by user." | tee -a "$LOG_FILE"
         ;;
     esac
   else
     echo
     if [[ "$DRY_RUN" == true ]]; then
-      echo "Dry run complete. No system changes were made and reboot was skipped."
+      echo "Dry run complete. No system changes were made and reboot was skipped." | tee -a "$LOG_FILE"
     else
-      echo "System update complete. Reboot skipped because --no-reboot was used."
+      echo "System update complete. Reboot skipped because --no-reboot was used." | tee -a "$LOG_FILE"
     fi
     if (( FAILED_STEPS > 0 )); then
-      echo "There were $FAILED_STEPS failed step(s). Review $LOG_FILE."
+      echo "There were $FAILED_STEPS failed step(s). Review $LOG_FILE." | tee -a "$LOG_FILE"
     fi
   fi
 }
