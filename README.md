@@ -30,6 +30,19 @@ Run the script directly:
 ./update-arch.sh
 ```
 
+To run it from any terminal with the `update` command, create a global symlink
+from the project directory:
+
+```bash
+sudo ln -sfn "[project-location]/update-arch.sh" /usr/local/bin/update
+```
+
+After that, run the updater with:
+
+```bash
+update
+```
+
 Available options:
 
 ```bash
