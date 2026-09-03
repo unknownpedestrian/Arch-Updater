@@ -1,4 +1,4 @@
-# Arch Update Routine
+# Arch Updater
 
 This repository contains a Bash script that performs a routine Arch Linux update workflow with a few convenience safeguards.
 
