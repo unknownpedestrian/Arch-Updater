@@ -8,6 +8,9 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 LOG_FILE="$SCRIPT_DIR/update-arch.log"
 FAILED_STEPS=0
+OFFICIAL_UPDATES=0
+AUR_UPDATES=0
+FLATPAK_UPDATES=0
 
 # set up cleanup for systemd-inhibit
 INHIBITOR_PID=""
@@ -114,6 +117,20 @@ run_and_check() {
 
   return 0
 }
+
+# counter logic
+count_updates() {
+  local package_manager="$1"
+
+  "$package_manager" -Qu 2>/dev/null | awk '/ -> / { count++ } END { print count + 0 }'
+}
+
+# count flatpaks differently
+count_flatpak_updates() {
+  flatpak remote-ls --updates --app --columns=ref 2>/dev/null \
+    | awk 'NF { count++ } END { print count + 0 }'
+}
+
 # reboot logic
 check_for_reboot() {
   if [[ "$REBOOT_AFTER" == true ]]; then
@@ -161,6 +178,7 @@ run_and_check "Cleaning package cache" sudo pacman -Scc --noconfirm
 # remove packages that pacman misses (hotfix)
 run_and_check "Tidying package cache" sudo rm -rf /var/cache/pacman/pkg/download* 2>/dev/null || true
 
+OFFICIAL_UPDATES=$(count_updates pacman) # update counter
 run_and_check "Updating system packages" sudo pacman -Syu --noconfirm
 
 # check for AUR helpers
@@ -180,6 +198,7 @@ else
 fi
 
 if [[ -n "$AUR_HELPER" ]]; then
+  AUR_UPDATES=$(count_updates "$AUR_HELPER") # update counter
   run_and_check "Cleaning $AUR_HELPER cache" "$AUR_HELPER" -Scc --noconfirm
   run_and_check "Updating AUR packages" "$AUR_HELPER" -Syu --noconfirm
 fi
@@ -205,6 +224,7 @@ if [[ -n "$AUR_HELPER" ]]; then
 fi
 # flapak 
 if command -v flatpak >/dev/null 2>&1; then
+  FLATPAK_UPDATES=$(count_flatpak_updates) # update counter
   run_and_check "Updating Flatpak applications" flatpak update --noninteractive
 else
   echo
@@ -223,5 +243,11 @@ if (( FAILED_STEPS > 0 )); then
   echo
   echo "Script finished with $FAILED_STEPS failed step(s). See $LOG_FILE for details."
 fi
+# print summary of updates
+echo
+echo "Packages selected for upgrade: $((OFFICIAL_UPDATES + AUR_UPDATES + FLATPAK_UPDATES))"
+echo "  Official repository packages: $OFFICIAL_UPDATES"
+echo "  AUR packages: $AUR_UPDATES"
+echo "  Flatpak applications: $FLATPAK_UPDATES"
 # finish up
 check_for_reboot
