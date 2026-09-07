@@ -78,9 +78,9 @@ if command -v systemd-inhibit >/dev/null 2>&1; then
   systemd-inhibit --what=idle:sleep:handle-lid-switch \
     --why="Updates are in progress" --mode=block sleep infinity &
   INHIBITOR_PID=$!
-  printf "systemd-inhibit started (PID $INHIBITOR_PID) to prevent sleep and screen locking."
+  echo "systemd-inhibit started (PID $INHIBITOR_PID) to prevent sleep and screen locking." 
 else
-  printf "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
+  echo "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
 fi
 
 if [[ "$DRY_RUN" == false ]]; then
