@@ -1,3 +1,4 @@
 Update-TODOS.txt
 update-arch.log
 *.log
+.acknowledged-lock

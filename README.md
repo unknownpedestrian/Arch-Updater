@@ -5,7 +5,7 @@ This repository contains a Bash script that performs a routine Arch Linux update
 ## What the script does
 
 The script will:
-
+- create a temporary inhibit on screen locking and sleep (systemd only)
 - refresh the Arch keyring
 - clear the package cache
 - remove stale package downloads
@@ -70,6 +70,7 @@ This script is intended for Arch Linux systems and assumes:
 
 - The script creates a log file in the same directory as the script named `update-arch.log`.
 - It prompts for a reboot by default when the update completes without failures.
+- a .lock file may be created named `.acknowledged-lock` after first run. this is needed to make sure the advisory is not shown multiple times.
 
 ## Safety note
 
