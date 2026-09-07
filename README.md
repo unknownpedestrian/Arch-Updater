@@ -70,6 +70,7 @@ This script is intended for Arch Linux systems and assumes:
 
 - The script creates a log file in the same directory as the script named `update-arch.log`.
 - It prompts for a reboot by default when the update completes without failures.
+- a .lock file may be created named `.acknowledged-lock` after first run. this is needed to make sure the advisory is not shown multiple times.
 
 ## Safety note
 

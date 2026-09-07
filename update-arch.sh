@@ -7,6 +7,7 @@ DRY_RUN=false
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 LOG_FILE="$SCRIPT_DIR/update-arch.log"
+WARNING_LOCK_FILE="$SCRIPT_DIR/.acknowledged-lock"
 FAILED_STEPS=0
 OFFICIAL_UPDATES=0
 AUR_UPDATES=0
@@ -85,8 +86,8 @@ if command -v systemd-inhibit >/dev/null 2>&1; then
 else
   echo "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
 fi
-
-if [[ "$DRY_RUN" == false ]]; then
+## BIG SCARY WARNING
+if [[ "$DRY_RUN" == false && ! -e "$WARNING_LOCK_FILE" ]]; then
   echo
   echo "By running this script, you are granting it permission to execute" 
   echo "commands with elevated privileges (sudo) as needed for system updates"
@@ -99,7 +100,13 @@ if [[ "$DRY_RUN" == false ]]; then
   echo "granting elevated privileges and accept responsibility for any" 
   echo "changes made to your system."
   echo
-  sleep 25
+  echo "This warning will only be shown once."
+  echo
+  sleep 20
+  touch "$WARNING_LOCK_FILE" # only show this once per user
+fi
+
+if [[ "$DRY_RUN" == false ]]; then
   # Cache the sudo credential once so all privileged commands can run without
   # prompting again for a password during the same session.
   sudo -v
