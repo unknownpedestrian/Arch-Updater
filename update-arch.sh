@@ -87,6 +87,19 @@ else
 fi
 
 if [[ "$DRY_RUN" == false ]]; then
+  echo
+  echo "By running this script, you are granting it permission to execute" 
+  echo "commands with elevated privileges (sudo) as needed for system updates"
+  echo 
+  echo "The script will prompt for your password."
+  echo
+  echo "If you do not wish to grant this permission, please exit the script now (Ctrl+C)."
+  echo
+  echo "By proceeding, you acknowledge that you understand the implications of" 
+  echo "granting elevated privileges and accept responsibility for any" 
+  echo "changes made to your system."
+  echo
+  sleep 25
   # Cache the sudo credential once so all privileged commands can run without
   # prompting again for a password during the same session.
   sudo -v
