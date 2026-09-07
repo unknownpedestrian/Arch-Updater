@@ -5,7 +5,7 @@ This repository contains a Bash script that performs a routine Arch Linux update
 ## What the script does
 
 The script will:
-
+- create a temporary inhibit on screen locking and sleep (systemd only)
 - refresh the Arch keyring
 - clear the package cache
 - remove stale package downloads
