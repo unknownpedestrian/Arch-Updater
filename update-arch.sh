@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 set -uo pipefail
-# handle interrupts 
+
+# set up cleanup for systemd-inhibit
+INHIBITOR_PID=""
+cleanup_inhibitor() {
+  if [[ -n "$INHIBITOR_PID" ]] && kill -0 "$INHIBITOR_PID" 2>/dev/null; then
+    kill "$INHIBITOR_PID" 2>/dev/null || true
+    wait "$INHIBITOR_PID" 2>/dev/null || true
+  fi
+}
+# handle interrupts
 trap 'echo; echo "Interrupted. Exiting cleanly..."; exit 1' INT TERM HUP
+# make cleanup happen on exit
+trap cleanup_inhibitor EXIT
 # find a terminal emulator to run in if not running in one
 if [[ ! -t 0 || ! -t 1 ]]; then
   for terminal in gnome-terminal x-terminal-emulator xfce4-terminal konsole kitty alacritty; do
@@ -29,6 +40,15 @@ if [[ ! -t 0 || ! -t 1 ]]; then
 
   echo "This script must be run from a terminal." >&2
   exit 1
+fi
+# try to prevent system sleep and screen locking
+if command -v systemd-inhibit >/dev/null 2>&1; then
+  systemd-inhibit --what=idle:sleep:handle-lid-switch \
+    --why="Arch update in progress" --mode=block sleep infinity &
+  INHIBITOR_PID=$!
+  echo "Keeping the system awake while the update runs."
+else
+  echo "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
 fi
 # default variables
 REBOOT_AFTER=true
@@ -136,7 +156,8 @@ check_for_reboot() {
 run_and_check "Refreshing Arch keyring" sudo pacman -Sy --noconfirm archlinux-keyring
 
 run_and_check "Cleaning package cache" sudo pacman -Scc --noconfirm
-run_and_check "Removing stale package downloads" sudo rm -rf /var/cache/pacman/pkg/download* 2>/dev/null || true
+# remove packages that pacman misses (hotfix)
+run_and_check "Tidying package cache" sudo rm -rf /var/cache/pacman/pkg/download* 2>/dev/null || true
 
 run_and_check "Updating system packages" sudo pacman -Syu --noconfirm
 
