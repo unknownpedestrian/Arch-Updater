@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
-
+# handle interrupts 
 trap 'echo; echo "Interrupted. Exiting cleanly..."; exit 1' INT TERM HUP
-
+# find a terminal emulator to run in if not running in one
 if [[ ! -t 0 || ! -t 1 ]]; then
   for terminal in gnome-terminal x-terminal-emulator xfce4-terminal konsole kitty alacritty; do
     if command -v "$terminal" >/dev/null 2>&1; then
       case "$terminal" in
+        # your favorite terminal here, add more if you want
         gnome-terminal)
           exec gnome-terminal -- bash -lc 'bash "$1" "${@:2}"; exit $?' _ "$0" "$@"
           ;;
@@ -29,14 +30,14 @@ if [[ ! -t 0 || ! -t 1 ]]; then
   echo "This script must be run from a terminal." >&2
   exit 1
 fi
-
+# default variables
 REBOOT_AFTER=true
 DRY_RUN=false
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 LOG_FILE="$SCRIPT_DIR/update-arch.log"
 FAILED_STEPS=0
-
+# command line arguments
 case "${1:-}" in
   --no-reboot)
     REBOOT_AFTER=false
@@ -50,10 +51,10 @@ case "${1:-}" in
     exit 0
     ;;
 esac
-
+# make log file
 mkdir -p "$(dirname "$LOG_FILE")"
 printf 'Update log started: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" > "$LOG_FILE"
-
+# output log file location to terminal and set up tee to log file
 if [[ -t 0 && -t 1 ]]; then
   echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
 else
@@ -66,6 +67,7 @@ if [[ "$DRY_RUN" == false ]]; then
   sudo -v
 fi
 
+# main loop
 run_and_check() {
   local label="$1"
   shift
@@ -90,7 +92,7 @@ run_and_check() {
 
   return 0
 }
-
+# reboot logic
 check_for_reboot() {
   if [[ "$REBOOT_AFTER" == true ]]; then
     if (( FAILED_STEPS > 0 )); then
@@ -130,7 +132,7 @@ check_for_reboot() {
     fi
   fi
 }
-
+## ----- main script execution ------ ##
 run_and_check "Refreshing Arch keyring" sudo pacman -Sy --noconfirm archlinux-keyring
 
 run_and_check "Cleaning package cache" sudo pacman -Scc --noconfirm
@@ -138,6 +140,7 @@ run_and_check "Removing stale package downloads" sudo rm -rf /var/cache/pacman/p
 
 run_and_check "Updating system packages" sudo pacman -Syu --noconfirm
 
+# check for AUR helpers
 if command -v yay >/dev/null 2>&1 && command -v paru >/dev/null 2>&1; then
   AUR_HELPER=""
   echo
@@ -157,42 +160,45 @@ if [[ -n "$AUR_HELPER" ]]; then
   run_and_check "Cleaning $AUR_HELPER cache" "$AUR_HELPER" -Scc --noconfirm
   run_and_check "Updating AUR packages" "$AUR_HELPER" -Syu --noconfirm
 fi
-
+# map unused orphans (pacman)
 mapfile -t pacman_orphans < <(pacman -Qdtq 2>/dev/null || true)
 if ((${#pacman_orphans[@]})); then
+  # clean orphans
   run_and_check "Removing orphaned pacman packages" sudo pacman -Rns --noconfirm "${pacman_orphans[@]}"
 else
   echo
   echo "==> No orphaned pacman packages found."
 fi
-
+# map unused orphans (AUR)
 if [[ -n "$AUR_HELPER" ]]; then
   mapfile -t aur_orphans < <("$AUR_HELPER" -Qdtq 2>/dev/null || true)
   if ((${#aur_orphans[@]})); then
+   # clean orphans
     run_and_check "Removing orphaned $AUR_HELPER packages" "$AUR_HELPER" -Rns --noconfirm "${aur_orphans[@]}"
   else
     echo
     echo "==> No orphaned $AUR_HELPER packages found."
   fi
 fi
-
+# flapak 
 if command -v flatpak >/dev/null 2>&1; then
   run_and_check "Updating Flatpak applications" flatpak update --noninteractive
 else
   echo
   echo "==> flatpak is not installed; skipping Flatpak update."
 fi
-
+# reflector
 if systemctl list-unit-files reflector.service >/dev/null 2>&1; then
   run_and_check "Starting reflector service" sudo systemctl start reflector.service
 else
   echo
   echo "==> reflector.service not found; skipping service start."
 fi
+## ----- main script execution end ------ ##
 
 if (( FAILED_STEPS > 0 )); then
   echo
   echo "Script finished with $FAILED_STEPS failed step(s). See $LOG_FILE for details."
 fi
-
+# finish up
 check_for_reboot
