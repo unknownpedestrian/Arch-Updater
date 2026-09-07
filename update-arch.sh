@@ -1,12 +1,24 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+# default variables
+REBOOT_AFTER=true
+DRY_RUN=false
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+LOG_FILE="$SCRIPT_DIR/update-arch.log"
+FAILED_STEPS=0
+
 # set up cleanup for systemd-inhibit
 INHIBITOR_PID=""
 cleanup_inhibitor() {
   if [[ -n "$INHIBITOR_PID" ]] && kill -0 "$INHIBITOR_PID" 2>/dev/null; then
+    printf 'Terminating system inhibitor (PID %s)...\n' "$INHIBITOR_PID"
     kill "$INHIBITOR_PID" 2>/dev/null || true
     wait "$INHIBITOR_PID" 2>/dev/null || true
+    printf 'System inhibitor (PID %s) terminated.\n' "$INHIBITOR_PID"
+  else
+    printf 'Inhibitor not running or already terminated.\n'
   fi
 }
 # handle interrupts
@@ -41,22 +53,6 @@ if [[ ! -t 0 || ! -t 1 ]]; then
   echo "This script must be run from a terminal." >&2
   exit 1
 fi
-# try to prevent system sleep and screen locking
-if command -v systemd-inhibit >/dev/null 2>&1; then
-  systemd-inhibit --what=idle:sleep:handle-lid-switch \
-    --why="Arch update in progress" --mode=block sleep infinity &
-  INHIBITOR_PID=$!
-  echo "Keeping the system awake while the update runs."
-else
-  echo "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
-fi
-# default variables
-REBOOT_AFTER=true
-DRY_RUN=false
-SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
-LOG_FILE="$SCRIPT_DIR/update-arch.log"
-FAILED_STEPS=0
 # command line arguments
 case "${1:-}" in
   --no-reboot)
@@ -74,11 +70,17 @@ esac
 # make log file
 mkdir -p "$(dirname "$LOG_FILE")"
 printf 'Update log started: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')" > "$LOG_FILE"
-# output log file location to terminal and set up tee to log file
-if [[ -t 0 && -t 1 ]]; then
-  echo "Log file: $LOG_FILE" | tee -a "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1 ## send everything to the log file
+echo "Log file: $LOG_FILE"
+
+# try to prevent system sleep and screen locking
+if command -v systemd-inhibit >/dev/null 2>&1; then
+  systemd-inhibit --what=idle:sleep:handle-lid-switch \
+    --why="Updates are in progress" --mode=block sleep infinity &
+  INHIBITOR_PID=$!
+  printf "systemd-inhibit started (PID $INHIBITOR_PID) to prevent sleep and screen locking."
 else
-  echo "Log file: $LOG_FILE" >> "$LOG_FILE"
+  printf "systemd-inhibit is unavailable; screen locking and sleep may occur." >&2
 fi
 
 if [[ "$DRY_RUN" == false ]]; then
@@ -98,15 +100,15 @@ run_and_check() {
   if [[ "$DRY_RUN" == true ]]; then
     local command
     printf -v command ' %s' "$@"
-    echo "[DRY RUN]$command" | tee -a "$LOG_FILE"
+    echo "[DRY RUN]$command"
     return 0
   fi
 
-  "$@" 2>&1 | tee -a "$LOG_FILE"
-  local status=${PIPESTATUS[0]}
+  "$@"
+  local status=$?
 
   if [[ "$status" -ne 0 ]]; then
-    echo "!! FAILED: $label (exit code $status)" | tee -a "$LOG_FILE"
+    echo "!! FAILED: $label (exit code $status)"
     ((FAILED_STEPS += 1))
   fi
 
@@ -117,10 +119,10 @@ check_for_reboot() {
   if [[ "$REBOOT_AFTER" == true ]]; then
     if (( FAILED_STEPS > 0 )); then
       echo
-      echo "Update completed with $FAILED_STEPS failed step(s). Review $LOG_FILE." | tee -a "$LOG_FILE"
+      echo "Update completed with $FAILED_STEPS failed step(s). Review $LOG_FILE."
     else
       echo
-      echo "System update complete." | tee -a "$LOG_FILE"
+      echo "System update complete."
     fi
 
     echo "Log file: $LOG_FILE"
@@ -133,22 +135,22 @@ check_for_reboot() {
     esac
     case "$answer" in
       [Yy]|[Yy][Ee][Ss])
-        echo "Rebooting now..." | tee -a "$LOG_FILE"
+        echo "Rebooting now..."
         sudo reboot
         ;;
       *)
-        echo "Reboot skipped by user." | tee -a "$LOG_FILE"
+        echo "Reboot skipped by user."
         ;;
     esac
   else
     echo
     if [[ "$DRY_RUN" == true ]]; then
-      echo "Dry run complete. No system changes were made and reboot was skipped." | tee -a "$LOG_FILE"
+      echo "Dry run complete. No system changes were made and reboot was skipped."
     else
-      echo "System update complete. Reboot skipped because --no-reboot was used." | tee -a "$LOG_FILE"
+      echo "System update complete. Reboot skipped because --no-reboot was used."
     fi
     if (( FAILED_STEPS > 0 )); then
-      echo "There were $FAILED_STEPS failed step(s). Review $LOG_FILE." | tee -a "$LOG_FILE"
+      echo "There were $FAILED_STEPS failed step(s). Review $LOG_FILE."
     fi
   fi
 }
