@@ -51,6 +51,17 @@ Available options:
 ./update-arch.sh --help
 ```
 
+## Tests
+
+Run the isolated updater behavior tests with:
+
+```bash
+bash tests/test-update-arch.sh
+```
+
+The tests run a temporary copy of the updater with mocked system commands; they
+do not update packages, modify the host system, or reboot.
+
 ### Options
 
 - `--dry-run` prints the commands that would run without changing the system
