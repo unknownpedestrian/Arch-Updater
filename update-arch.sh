@@ -12,6 +12,8 @@ FAILED_STEPS=0
 OFFICIAL_UPDATES=0
 AUR_UPDATES=0
 FLATPAK_UPDATES=0
+IGNORED_PACKAGES=()
+AUR_IGNORED_PACKAGES=()
 
 # set up cleanup for systemd-inhibit
 INHIBITOR_PID=""
@@ -145,6 +147,121 @@ count_updates() {
   "$package_manager" -Qu 2>/dev/null | awk '/ -> / { count++ } END { print count + 0 }'
 }
 
+# Retry pacman once while ignoring packages it reports as breaking dependencies.
+update_pacman_packages() {
+  local output_file status
+  local ignored_list
+
+  echo
+  echo "==> Updating system packages"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY RUN] sudo pacman -Syu --noconfirm"
+    return 0
+  fi
+
+  output_file=$(mktemp) || {
+    echo "!! FAILED: Updating system packages (could not create temporary output file)"
+    ((FAILED_STEPS += 1))
+    return 0
+  }
+
+  sudo pacman -Syu --noconfirm 2>&1 | tee "$output_file"
+  status=${PIPESTATUS[0]}
+
+  if [[ "$status" -ne 0 ]]; then
+    mapfile -t IGNORED_PACKAGES < <(
+      awk '
+        / breaks dependency / {
+          for (i = 1; i < NF; i++) {
+            if ($i == "installing" || $i == "upgrading" || $i == "downgrading") {
+              print $(i + 1)
+              break
+            }
+          }
+        }
+      ' "$output_file" | sort -u
+    )
+
+    if ((${#IGNORED_PACKAGES[@]})); then
+      echo
+      printf 'Pacman reported dependency-breaking packages: %s\n' "${IGNORED_PACKAGES[*]}"
+      echo "Retrying the system update with these packages ignored."
+      local IFS=,
+      ignored_list="${IGNORED_PACKAGES[*]}"
+
+      sudo pacman -Syu --noconfirm --ignore "$ignored_list" 2>&1 | tee "$output_file"
+      status=${PIPESTATUS[0]}
+    fi
+  fi
+
+  rm -f "$output_file"
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "!! FAILED: Updating system packages (exit code $status)"
+    ((FAILED_STEPS += 1))
+  fi
+
+  return 0
+}
+
+# Retry the selected AUR helper once while ignoring reported dependency breakers.
+update_aur_packages() {
+  local output_file status ignored_list
+
+  echo
+  echo "==> Updating AUR packages"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "[DRY RUN] $AUR_HELPER -Syu --noconfirm"
+    return 0
+  fi
+
+  output_file=$(mktemp) || {
+    echo "!! FAILED: Updating AUR packages (could not create temporary output file)"
+    ((FAILED_STEPS += 1))
+    return 0
+  }
+
+  "$AUR_HELPER" -Syu --noconfirm 2>&1 | tee "$output_file"
+  status=${PIPESTATUS[0]}
+
+  if [[ "$status" -ne 0 ]]; then
+    mapfile -t AUR_IGNORED_PACKAGES < <(
+      awk '
+        / breaks dependency / {
+          for (i = 1; i < NF; i++) {
+            if ($i == "installing" || $i == "upgrading" || $i == "downgrading") {
+              print $(i + 1)
+              break
+            }
+          }
+        }
+      ' "$output_file" | sort -u
+    )
+
+    if ((${#AUR_IGNORED_PACKAGES[@]})); then
+      echo
+      printf '%s reported dependency-breaking packages: %s\n' "$AUR_HELPER" "${AUR_IGNORED_PACKAGES[*]}"
+      echo "Retrying the AUR update with these packages ignored."
+      local IFS=,
+      ignored_list="${AUR_IGNORED_PACKAGES[*]}"
+
+      "$AUR_HELPER" -Syu --noconfirm --ignore "$ignored_list" 2>&1 | tee "$output_file"
+      status=${PIPESTATUS[0]}
+    fi
+  fi
+
+  rm -f "$output_file"
+
+  if [[ "$status" -ne 0 ]]; then
+    echo "!! FAILED: Updating AUR packages (exit code $status)"
+    ((FAILED_STEPS += 1))
+  fi
+
+  return 0
+}
+
 # count flatpaks differently
 count_flatpak_updates() {
   flatpak remote-ls --updates --app --columns=ref 2>/dev/null \
@@ -199,7 +316,7 @@ run_and_check "Cleaning package cache" sudo pacman -Scc --noconfirm
 run_and_check "Tidying package cache" sudo rm -rf /var/cache/pacman/pkg/download* 2>/dev/null || true
 
 OFFICIAL_UPDATES=$(count_updates pacman) # update counter
-run_and_check "Updating system packages" sudo pacman -Syu --noconfirm
+update_pacman_packages
 
 # check for AUR helpers
 if command -v yay >/dev/null 2>&1 && command -v paru >/dev/null 2>&1; then
@@ -220,7 +337,7 @@ fi
 if [[ -n "$AUR_HELPER" ]]; then
   AUR_UPDATES=$(count_updates "$AUR_HELPER") # update counter
   run_and_check "Cleaning $AUR_HELPER cache" "$AUR_HELPER" -Scc --noconfirm
-  run_and_check "Updating AUR packages" "$AUR_HELPER" -Syu --noconfirm
+  update_aur_packages
 fi
 # map unused orphans (pacman)
 mapfile -t pacman_orphans < <(pacman -Qdtq 2>/dev/null || true)
@@ -269,5 +386,15 @@ echo "Packages selected for upgrade: $((OFFICIAL_UPDATES + AUR_UPDATES + FLATPAK
 echo "  Official repository packages: $OFFICIAL_UPDATES"
 echo "  AUR packages: $AUR_UPDATES"
 echo "  Flatpak applications: $FLATPAK_UPDATES"
+if ((${#IGNORED_PACKAGES[@]})); then
+  echo "Packages ignored by pacman due to dependency breaks: ${IGNORED_PACKAGES[*]}"
+else
+  echo "Packages ignored by pacman due to dependency breaks: none"
+fi
+if ((${#AUR_IGNORED_PACKAGES[@]})); then
+  echo "Packages ignored by $AUR_HELPER due to dependency breaks: ${AUR_IGNORED_PACKAGES[*]}"
+else
+  echo "Packages ignored by AUR helper due to dependency breaks: none"
+fi
 # finish up
 check_for_reboot
